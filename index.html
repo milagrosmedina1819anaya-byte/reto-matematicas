@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reto de Fracciones y Raíces</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Arial,sans-serif;background:linear-gradient(135deg,#eef2ff,#f8fafc);color:#1e293b;min-height:100vh;display:flex;justify-content:center;align-items:center;padding:20px}
+  .game{width:min(700px,100%);background:white;border-radius:24px;padding:28px;box-shadow:0 12px 40px rgba(15,23,42,.12)}
+  h1{text-align:center;margin:0 0 8px;font-size:30px}
+  .subtitle{text-align:center;color:#64748b;margin-bottom:24px}
+  .stats{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-bottom:18px}
+  .pill{padding:9px 14px;background:#f1f5f9;border-radius:999px;font-weight:bold}
+  .controls{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-bottom:20px}
+  select,button,input{font:inherit}
+  select{padding:10px 12px;border:1px solid #cbd5e1;border-radius:10px;background:white}
+  .question{background:#f8fafc;border:1px solid #e2e8f0;border-radius:18px;padding:30px 15px;text-align:center;margin-bottom:20px}
+  .type{color:#64748b;font-weight:bold;margin-bottom:10px}
+  .big{font-size:clamp(38px,10vw,60px);font-weight:800}
+  label{display:block;font-weight:bold;margin-bottom:8px}
+  input{width:100%;padding:14px;border:2px solid #cbd5e1;border-radius:12px;outline:none;font-size:20px}
+  input:focus{border-color:#6366f1}
+  .buttons{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+  button{flex:1;min-width:120px;padding:13px 16px;border:0;border-radius:12px;background:#e2e8f0;color:#1e293b;font-weight:bold;cursor:pointer}
+  button.primary{background:#6366f1;color:white}
+  button:hover{filter:brightness(.96)}
+  .feedback{text-align:center;min-height:30px;margin-top:15px;font-weight:bold}
+  .help{text-align:center;color:#64748b;font-size:14px;margin-top:10px}
+  .hidden{display:none}
+  @media(max-width:480px){.game{padding:20px}.buttons{flex-direction:column}button{width:100%}}
+</style>
+</head>
+<body>
+<div class="game">
+  <h1>🎯 Reto de Matemáticas</h1>
+  <div class="subtitle">Fracciones, decimales y raíces cuadradas</div>
+
+  <div class="stats">
+    <div class="pill">⭐ Puntos: <span id="score">0</span></div>
+    <div class="pill">🔥 Racha: <span id="streak">0</span></div>
+    <div class="pill">📋 Pregunta: <span id="round">1</span>/30</div>
+    <div class="pill">⏱️ Tiempo: <span id="time">10:00</span></div>
+  </div>
+
+  <div class="controls">
+    <label for="mode">Tipo de ejercicio:</label>
+    <select id="mode">
+      <option value="mixed">🎲 Mezclado</option>
+      <option value="f2d">🍕 Fracción → decimal</option>
+      <option value="d2f">🔢 Decimal → fracción</option>
+      <option value="sqrt">√ Raíz cuadrada</option>
+    </select>
+  </div>
+
+  <div class="question">
+    <div class="type" id="typeLabel">Fracción → decimal</div>
+    <div class="big" id="question">1/2 = ?</div>
+  </div>
+
+  <form id="answerForm">
+    <label for="answer">Tu respuesta:</label>
+    <input id="answer" autocomplete="off" inputmode="decimal" placeholder="Escribe aquí...">
+    <div class="buttons">
+      <button class="primary" type="submit">✓ Comprobar</button>
+      <button type="button" id="skip">⏭ Saltar</button>
+      <button type="button" id="restart">↻ Reiniciar</button>
+    </div>
+  </form>
+
+  <div class="feedback" id="feedback" aria-live="polite"></div>
+  <div class="help">El reto tiene 30 ejercicios y hasta 10 minutos. Puedes escribir decimales con punto o coma. Ejemplo: 0.5 o 0,5.</div>
+</div>
+
+<script>
+(() => {
+  const TOTAL=30;
+  const scoreEl=document.getElementById("score");
+  const streakEl=document.getElementById("streak");
+  const roundEl=document.getElementById("round");
+  const qEl=document.getElementById("question");
+  const typeEl=document.getElementById("typeLabel");
+  const answer=document.getElementById("answer");
+  const feedback=document.getElementById("feedback");
+  const mode=document.getElementById("mode");
+  const form=document.getElementById("answerForm");
+  const skip=document.getElementById("skip");
+  const restart=document.getElementById("restart");
+  const timeEl=document.getElementById("time");
+
+  let score=0, streak=0, questionNumber=1, current=null;
+  let answered=false, timer=null, gameTimer=null;
+  let secondsLeft=600;
+
+  function gcd(a,b){
+    a=Math.abs(a); b=Math.abs(b);
+    while(b){const t=a%b; a=b; b=t;}
+    return a||1;
+  }
+
+  function fraction(n,d){
+    if(d<0){n=-n; d=-d;}
+    const g=gcd(n,d);
+    return `${n/g}/${d/g}`;
+  }
+
+  function randomInt(a,b){
+    return Math.floor(Math.random()*(b-a+1))+a;
+  }
+
+  function parseDecimal(text){
+    const cleaned=String(text).trim().replace(",",".");
+    if(!cleaned)return null;
+    const n=Number(cleaned);
+    return Number.isFinite(n)?n:null;
+  }
+
+  function parseFraction(text){
+    const m=String(text).trim().match(/^(-?\d+)\s*\/\s*(-?\d+)$/);
+    if(!m)return null;
+    const n=Number(m[1]);
+    const d=Number(m[2]);
+    if(!Number.isFinite(n)||!Number.isFinite(d)||d===0)return null;
+    return fraction(n,d);
+  }
+
+  function createQuestion(){
+    let type=mode.value;
+    if(type==="mixed") type=["f2d","d2f","sqrt"][randomInt(0,2)];
+
+    if(type==="f2d"){
+      let d=randomInt(2,12), n=randomInt(1,d-1);
+      const g=gcd(n,d); n/=g; d/=g;
+      const value=n/d;
+      current={type,display:`${n}/${d} = ?`,label:"Fracción → decimal",expected:value,answerText:String(value)};
+    }else if(type==="d2f"){
+      const ds=[2,4,5,8,10,20,25,50];
+      let d=ds[randomInt(0,ds.length-1)], n=randomInt(1,d-1);
+      const g=gcd(n,d); n/=g; d/=g;
+      const value=n/d;
+      current={type,display:`${value} = ?`,label:"Decimal → fracción",expected:fraction(n,d),answerText:fraction(n,d)};
+    }else{
+      const root=randomInt(1,20), value=root*root;
+      current={type,display:`√${value} = ?`,label:"Raíz cuadrada",expected:root,answerText:String(root)};
+    }
+
+    qEl.textContent=current.display;
+    typeEl.textContent=current.label;
+    roundEl.textContent=questionNumber;
+    answer.value="";
+    feedback.textContent="";
+    answered=false;
+    answer.disabled=false;
+    answer.focus();
+  }
+
+  function startGameTimer(){
+    if(gameTimer) clearInterval(gameTimer);
+    secondsLeft=600;
+    updateTime();
+    gameTimer=setInterval(()=>{
+      secondsLeft--;
+      updateTime();
+      if(secondsLeft<=0){
+        clearInterval(gameTimer);
+        gameTimer=null;
+        questionNumber=TOTAL+1;
+        finish(true);
+      }
+    },1000);
+  }
+
+  function updateTime(){
+    const min=Math.floor(secondsLeft/60);
+    const sec=String(secondsLeft%60).padStart(2,"0");
+    timeEl.textContent=`${min}:${sec}`;
+  }
+
+  function next(){
+    if(timer){clearTimeout(timer); timer=null;}
+    if(questionNumber>TOTAL){finish(); return;}
+    createQuestion();
+  }
+
+  function finish(timeUp=false){
+    if(gameTimer){clearInterval(gameTimer); gameTimer=null;}
+    qEl.textContent=`${timeUp ? "⏰ Tiempo terminado" : "🎉 Partida terminada"} — ${score}/${TOTAL}`;
+    typeEl.textContent=timeUp ? "¡Se acabaron los 10 minutos!" : "¡Partida terminada!";
+    feedback.textContent=score===TOTAL?"🏆 ¡Perfecto!":score>=24?"🌟 ¡Muy bien!":score>=15?"💪 ¡Buen trabajo! Sigue practicando.":"📚 Sigue practicando, vas aprendiendo.";
+    answer.disabled=true;
+    answered=true;
+    roundEl.textContent=TOTAL;
+  }
+
+  function check(){
+    if(answered||!current||questionNumber>TOTAL)return;
+    const raw=answer.value.trim();
+    if(!raw){feedback.textContent="✏️ Escribe una respuesta primero."; return;}
+
+    let correct=false;
+    if(current.type==="d2f"){
+      correct=parseFraction(raw)===current.expected;
+    }else{
+      const value=parseDecimal(raw);
+      correct=value!==null && Math.abs(value-current.expected)<=0.000001;
+    }
+
+    answered=true;
+    answer.disabled=true;
+
+    if(correct){
+      score+=1;
+      streak+=1;
+      feedback.textContent="✅ ¡Correcto! +1 punto";
+    }else{
+      streak=0;
+      feedback.textContent=`❌ La respuesta correcta es ${current.answerText}`;
+    }
+
+    scoreEl.textContent=score;
+    streakEl.textContent=streak;
+    questionNumber+=1;
+
+    timer=setTimeout(next,800);
+  }
+
+  function skipQuestion(){
+    if(answered||!current||questionNumber>TOTAL)return;
+    answered=true;
+    streak=0;
+    streakEl.textContent=streak;
+    feedback.textContent=`⏭ Pregunta saltada. La respuesta era ${current.answerText}`;
+    answer.disabled=true;
+    questionNumber+=1;
+    timer=setTimeout(next,800);
+  }
+
+  function reset(){
+    if(timer){clearTimeout(timer); timer=null;}
+    if(gameTimer){clearInterval(gameTimer); gameTimer=null;}
+    score=0; streak=0; questionNumber=1; current=null; answered=false;
+    scoreEl.textContent="0";
+    streakEl.textContent="0";
+    roundEl.textContent="1";
+    answer.disabled=false;
+    startGameTimer();
+    createQuestion();
+  }
+
+  form.addEventListener("submit",e=>{e.preventDefault();check();});
+  skip.addEventListener("click",skipQuestion);
+  restart.addEventListener("click",reset);
+  mode.addEventListener("change",reset);
+  answer.addEventListener("keydown",e=>{
+    if(e.key==="Enter"){
+      e.preventDefault();
+      check();
+    }
+  });
+
+  startGameTimer();
+  createQuestion();
+})();
+</script>
+</body>
+</html>
